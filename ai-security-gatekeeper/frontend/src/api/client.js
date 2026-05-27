@@ -1,0 +1,30 @@
+import axios from "axios";
+
+const API_BASE_URL = "http://localhost:8000";
+
+export const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  timeout: 120000,
+});
+
+export async function submitScan({ name, version, ecosystem }) {
+  const { data } = await api.post("/api/scan/", {
+    name,
+    version,
+    ecosystem,
+  });
+  return data;
+}
+
+export async function fetchHistory() {
+  const { data } = await api.get("/api/history/");
+  return data;
+}
+
+export async function fetchScanById(scanId) {
+  const { data } = await api.get(`/api/history/${scanId}`);
+  return data;
+}

@@ -1,0 +1,26 @@
+{
+  "serialize-javascript": "3.0.0",
+  "name": "ai-security-gatekeeper-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.2.0",
+    "lodash": "4.17.15",
+    "serialize-javascript": "3.0.0",
+    "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.0.5"
+  }
+  
+}
