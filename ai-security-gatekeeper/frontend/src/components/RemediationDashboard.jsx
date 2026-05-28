@@ -18,6 +18,7 @@ import { Link, useParams } from "react-router-dom";
 import { fetchRemediationScan } from "../api/client";
 import { formatDateTime, getStatusTheme } from "../utils/statusTheme";
 import Header from "./Header";
+import RemediationChat from "./RemediationChat";
 
 // ---------------------------------------------------------------------------
 // Data parsing helpers
@@ -34,6 +35,7 @@ function parseDependencyEntries(scan) {
     const pkg = scan.package;
     return [
       {
+        scanId: scan.id,
         packageRef: pkg ? `${pkg.name}@${pkg.version}` : "Unknown",
         status: String(scan.status || "").toUpperCase(),
         explanation: scan.ai_explanation || "",
@@ -69,11 +71,12 @@ function parseDependencyEntries(scan) {
       nlIdx >= 0 ? explanationPart.slice(0, nlIdx).trim() : explanationPart.trim();
     const explanation = nlIdx >= 0 ? explanationPart.slice(nlIdx + 1).trim() : "";
     const status = statusMap[packageRef] || "UNKNOWN";
-    return { packageRef, status, explanation, recommendation: recommendationPart.trim() };
+    return { scanId: scan.id, packageRef, status, explanation, recommendation: recommendationPart.trim() };
   });
 
   if (entries.length === 0) {
     return Object.entries(statusMap).map(([packageRef, status]) => ({
+      scanId: scan.id,
       packageRef,
       status,
       explanation: "",

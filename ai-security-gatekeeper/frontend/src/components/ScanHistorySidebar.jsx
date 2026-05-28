@@ -6,11 +6,10 @@ export default function ScanHistorySidebar({ currentScanId, onSelectScan }) {
 
   useEffect(() => {
     // שליפת היסטוריית הסריקות מה-Backend
-    fetch('/api/scan')
+    fetch('/api/history/')
       .then((res) => res.json())
       .then((data) => {
-        // מניחים שהדאטה מחזיר מערך של סריקות עם מזהה, תאריך וסטטוס
-        setScans(data);
+        setScans(Array.isArray(data) ? data : []);
       })
       .catch((err) => console.error("Error loading scan history:", err))
       .finally(() => setLoading(false));
@@ -40,16 +39,15 @@ export default function ScanHistorySidebar({ currentScanId, onSelectScan }) {
           scans.map((scan) => {
             const isSelected = currentScanId === scan.id;
             const isBlocked = scan.status === 'BLOCKED' || scan.vulnerabilities_count > 0;
-            
+
             return (
               <button
                 key={scan.id}
                 onClick={() => onSelectScan(scan.id)}
-                className={`w-full text-left p-3 rounded-lg transition-all flex flex-col gap-1 text-xs border ${
-                  isSelected 
-                    ? 'bg-slate-900 border-indigo-500 shadow-md' 
+                className={`w-full text-left p-3 rounded-lg transition-all flex flex-col gap-1 text-xs border ${isSelected
+                    ? 'bg-slate-900 border-indigo-500 shadow-md'
                     : 'bg-transparent border-transparent hover:bg-slate-900/50 hover:border-slate-800'
-                }`}
+                  }`}
               >
                 <div className="flex items-center justify-between font-mono">
                   <span className={`font-bold ${isSelected ? 'text-indigo-400' : 'text-slate-300'}`}>
@@ -57,9 +55,9 @@ export default function ScanHistorySidebar({ currentScanId, onSelectScan }) {
                   </span>
                   <span className={`inline-block w-2 h-2 rounded-full ${isBlocked ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'}`} />
                 </div>
-                
+
                 <div className="flex justify-between items-center text-[10px] text-slate-500">
-                  <span>{new Date(scan.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                  <span>{new Date(scan.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   <span className={isBlocked ? 'text-rose-400/80' : 'text-emerald-400/80'}>
                     {isBlocked ? 'BLOCKED' : 'APPROVED'}
                   </span>

@@ -33,3 +33,10 @@ export async function fetchRemediationScan(scanId) {
   const { data } = await api.get(`/api/scan/${scanId}`);
   return data;
 }
+
+export const chatMessage = (scanId, message, history) =>
+  fetch(`/api/chat/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scan_id: scanId, message, history }),
+  });
