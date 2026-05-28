@@ -2,7 +2,7 @@ from backend.database import engine
 from sqlalchemy import text
 
 with engine.connect() as conn:
-    conn.execute(text("ALTER TABLE scan_results ALTER COLUMN status TYPE VARCHAR(32)"))
+    conn.execute(text("UPDATE scan_results SET status = 'BLOCKED' WHERE status = 'OVERRIDDEN'"))
     conn.commit()
 
-print('Column resized successfully')
+print('Reset done — all OVERRIDDEN scans set back to BLOCKED')
