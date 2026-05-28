@@ -20,8 +20,7 @@ _LEGAL_SYSTEM_PROMPT = (
     '  "status": "APPROVED" or "BLOCKED"\n'
     '  "reason": concise one-sentence explanation of the compliance decision\n'
     '  "risk_level": "low", "medium", or "high"\n'
-    '  "suggested_alternative": if status is BLOCKED, you MUST explicitly name 1-2 specific, real open-source packages '
-    'that provide the exact same functionality but under a permissive license (like MIT). DO NOT give generic advice. Set to null if status is APPROVED.\n'
+    '  "suggested_alternative": if status is BLOCKED, you MUST first mentally identify the core technical functionality of the scanned package. Then, based on that functionality, explicitly name 1-2 real, widely-used npm packages that provide the exact same utility under a permissive license (like MIT). Do NOT invent names or guess. If no exact npm match exists, suggest a built-in Node.js module. Set to null if status is APPROVED.\n'
     "Do not add any conversational text outside the JSON."
 )
 
