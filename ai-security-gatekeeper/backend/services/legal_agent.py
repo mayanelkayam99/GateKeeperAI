@@ -10,28 +10,31 @@ from langchain_groq import ChatGroq
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Prompt — exact wording as specified in the project requirements
+# Prompt — Universal Legal Agent (No hardcoded company info)
 # ---------------------------------------------------------------------------
 _LEGAL_SYSTEM_PROMPT = (
-    "You are an expert legal compliance officer for open-source software. "
-    "Analyze the following license text against the company policy provided. "
+    "You are an expert legal compliance officer evaluating open-source software licenses. "
+    "Analyze the license text strictly against the specific 'Company policy' provided by the user. "
+    "If the license contains any clauses that violate the provided Company policy, you MUST return a BLOCKED status.\n"
     "Return a JSON object with exactly these fields:\n"
     '  "status": "APPROVED" or "BLOCKED"\n'
     '  "reason": concise one-sentence explanation of the compliance decision\n'
     '  "risk_level": "low", "medium", or "high"\n'
-    '  "suggested_alternative": if status is BLOCKED, name 1-2 real npm packages '
-    "that provide the same functionality under an MIT or Apache-2.0 license "
-    '(e.g., "lodash-es, ramda"); set to null if status is APPROVED\n'
+    '  "suggested_alternative": if status is BLOCKED, you MUST explicitly name 1-2 specific, real npm packages '
+    'or native Node.js APIs as alternatives (e.g., suggest "fluent-ffmpeg" or "ffmpeg.wasm" instead of "ffmpeg-static", '
+    'or "lodash-es" for "lodash"). DO NOT give generic advice. Set to null if status is APPROVED.\n'
     "Do not add any conversational text outside the JSON."
 )
 
 # ---------------------------------------------------------------------------
-# Default policy applied when a caller does not supply one
+# Default policy (Simulating what an Admin would configure in the UI/DB)
 # ---------------------------------------------------------------------------
 DEFAULT_PROJECT_POLICY = (
     "Approved SPDX identifiers: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, Unlicense. "
     "Blocked identifiers: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, LGPL-3.0, SSPL, Commons Clause. "
-    "Unknown or unlicensed packages must be BLOCKED pending legal review."
+    "Unknown or unlicensed packages must be BLOCKED pending legal review. "
+    "CRITICAL CONTEXT: We are a Cybersecurity Enterprise. You MUST carefully read the actual license text and BLOCK any license "
+    "that contains special clauses restricting or prohibiting use by cybersecurity companies, vulnerability scanners, or commercial entities."
 )
 
 # Returned when the LLM is unavailable or returns unparseable output.
