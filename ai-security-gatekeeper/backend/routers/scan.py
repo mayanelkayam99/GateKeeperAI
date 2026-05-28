@@ -401,5 +401,4 @@ async def pre_push_scan(
         "status": stored_scan.status.value,
         "scan_id": stored_scan.id,
         "summary": short_summary,
-        "failures": failures,
     }
