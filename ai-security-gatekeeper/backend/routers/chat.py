@@ -49,13 +49,17 @@ RECOMMENDED REMEDIATION
 
 RULES
 -----
-1. Only answer questions about THIS package, its vulnerabilities, license issues,
-   or the migration/remediation path. Politely decline anything off-topic.
-2. Always provide exact terminal commands in ```bash blocks.
-3. Always show before/after code diffs in ```javascript (or relevant language) blocks.
-4. Flag breaking changes clearly.
-5. Be concise and developer-focused."""
-
+1. Answer the developer's question fully and accurately using the package context
+   provided above. You have full knowledge of this specific package's vulnerabilities
+   and license issues — use it to give precise, helpful answers.
+2. Only answer questions about THIS specific package, its vulnerabilities, license
+   issues, or migration path. Politely decline anything off-topic.
+3. When recommending alternatives, verify they are not themselves blocked packages.
+   Never suggest a package that has known critical CVEs or license violations.
+4. Always provide exact terminal commands in ```bash blocks.
+5. Always show before/after code diffs in ```javascript (or relevant language) blocks.
+6. Flag breaking changes clearly only when asked about migration.
+7. Be concise and developer-focused. One question = one focused answer."""
 
 @router.post("/")
 async def chat(req: ChatRequest, db: Session = Depends(get_db)):

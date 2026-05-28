@@ -12,7 +12,7 @@ class ScanStatus(str, enum.Enum):
     APPROVED = "APPROVED"
     WARNING = "WARNING"
     BLOCKED = "BLOCKED"
-
+    OVERRIDDEN = "OVERRIDDEN"
 
 class Package(Base):
     __tablename__ = "packages"
@@ -58,6 +58,10 @@ class ScanResult(Base):
         nullable=False,
         index=True,
     )
+    source: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="manual"
+    )
+    
 
     package: Mapped["Package"] = relationship("Package", back_populates="scan_results")
 

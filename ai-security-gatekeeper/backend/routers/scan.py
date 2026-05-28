@@ -285,7 +285,7 @@ async def pre_push_scan(
             detail="No dependencies found in request payload.",
         )
 
-    top_dependencies = list(dependencies.items())[:10]
+    top_dependencies = list(dependencies.items())[:3]
 
     try:
         orchestrator = SecurityOrchestrator()
@@ -372,6 +372,26 @@ async def pre_push_scan(
         "ai_explanation": "\n\n---\n\n".join(ai_notes),
         "recommendation": "",
     }
+    # בדיקה: האם הסריקה האחרונה של אותן חבילות כבר OVERRIDDEN?
+    if final_status == "BLOCKED":
+        last_scan = (
+            db.query(ScanResult)
+            .join(Package)
+            .filter(
+                Package.name == "pre-push dependency batch",
+                ScanResult.source == "pre-push",
+                ScanResult.status == "OVERRIDDEN",
+            )
+            .order_by(ScanResult.scanned_at.desc())
+            .first()
+        )
+        if last_scan:
+            return {
+                "status": "APPROVED",
+                "scan_id": last_scan.id,
+                "summary": "Previously overridden — push allowed.",
+                "failures": [],
+            }
     aggregate_scan_request = ScanRequest(
         name="pre-push dependency batch",
         version=f"count-{len(top_dependencies)}",

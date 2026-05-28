@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
+from backend.models import ScanStatus
+
 
 from backend.database import get_db
 from backend.models import ScanResult
@@ -67,7 +69,7 @@ def override_scan(req: OverrideRequest, db: Session = Depends(get_db)):
         explanation_part + override_note
         + ("===RECOMMENDATION===" + recommendation_part if recommendation_part else "")
     )
-    scan.status = "OVERRIDDEN"
+    scan.status = ScanStatus.OVERRIDDEN
 
     db.commit()
     db.refresh(scan)

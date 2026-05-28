@@ -284,6 +284,16 @@ export default function App() {
   }, []);
 
   useEffect(() => { loadHistory(); }, [loadHistory]);
+  // קריאת scanId מה-URL בטעינה
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlScanId = params.get("scanId");
+    if (!urlScanId) return;
+    const parsed = parseInt(urlScanId, 10);
+    if (!isNaN(parsed)) {
+      handleSelectScan(parsed);
+    }
+  }, []);
   useEffect(() => { scanPackage("lodash").catch(() => { }); }, []);
 
   const handleScan = async () => {
@@ -430,7 +440,7 @@ export default function App() {
       <div style={{ display: "flex", height: "calc(100vh - 60px)" }}>
 
         {/* ── SIDEBAR ── */}
-        <aside style={{ width: 320, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+        <aside style={{ width: 350, background: C.surface, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", flexShrink: 0 }}>
           <div style={{ padding: "18px 20px 12px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", color: C.textDim, textTransform: "uppercase", marginBottom: 4 }}>Audit History</div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
