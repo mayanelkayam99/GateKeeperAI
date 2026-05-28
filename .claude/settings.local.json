@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /c/ai-security-gatekeeper && git rm --cached ai-security-gatekeeper/.env 2>&1)",
+      "Bash(cd /c/ai-security-gatekeeper && git check-ignore -v ai-security-gatekeeper/frontend/node_modules)",
+      "Bash(cd /c/ai-security-gatekeeper && git rm --cached -r ai-security-gatekeeper/frontend/node_modules 2>&1 | tail -5 && echo \"Done — removed from index\")",
+      "Bash(cd /c/ai-security-gatekeeper && git check-ignore -v ai-security-gatekeeper/.env ai-security-gatekeeper/frontend/node_modules 2>&1)"
+    ]
+  }
+}

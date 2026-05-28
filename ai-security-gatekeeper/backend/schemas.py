@@ -50,6 +50,18 @@ class ScanRequest(BaseModel):
     ecosystem: str = Field(default="npm", max_length=32)
 
 
+class SimpleScanRequest(BaseModel):
+    package_name: str = Field(..., min_length=1, max_length=255)
+
+
+class ScanResponse(BaseModel):
+    status: str  # "APPROVED" | "WARNING" | "BLOCKED"
+    license_type: str
+    cve_summary: str
+    ai_explanation: str
+    alternatives: list[str]
+
+
 class HistoryItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

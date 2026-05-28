@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session, joinedload
 from backend.agents.orchestrator import SecurityOrchestrator, SecurityOrchestratorError
 from backend.database import get_db
 from backend.models import Package, ScanResult, ScanStatus
-from backend.schemas import ScanRequest, ScanResultResponse
+from backend.schemas import ScanRequest, ScanResultResponse, SimpleScanRequest, ScanResponse
+from backend.services.legal_agent import DEFAULT_PROJECT_POLICY, analyze_license
 from backend.services.npm import get_npm_license
 from backend.services.osv import check_osv_vulnerabilities, query_osv
 
@@ -77,6 +78,77 @@ def _get_or_create_package(db: Session, payload: ScanRequest) -> Package:
     return package
 
 
+def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str, str]:
+    """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
+
+    Returns a (possibly updated) copy of *analysis* — the original dict is never mutated.
+    """
+    legal = analyze_license(license_data, DEFAULT_PROJECT_POLICY)
+    if legal["status"] != "BLOCKED":
+        return analysis
+
+    updated = dict(analysis)
+    updated["status"] = "BLOCKED"
+    legal_note = f"[Legal Agent — {legal['risk_level'].upper()} risk] {legal['reason']}"
+    existing = updated.get("ai_explanation", "").strip()
+    updated["ai_explanation"] = f"{legal_note} | {existing}" if existing else legal_note
+    return updated
+
+
+@router.post("", response_model=ScanResponse, status_code=status.HTTP_201_CREATED)
+def scan_package(
+    payload: SimpleScanRequest,
+    db: Session = Depends(get_db),
+) -> ScanResponse:
+    """Simplified scan endpoint — accepts only a package name, defaults to npm/latest."""
+    scan_req = ScanRequest(name=payload.package_name, version="*", ecosystem="npm")
+    package = _get_or_create_package(db, scan_req)
+
+    osv_summary = check_osv_vulnerabilities(
+        package_name=payload.package_name,
+        version="*",
+        ecosystem="npm",
+    )
+    osv_check = query_osv(
+        package_name=payload.package_name,
+        version="*",
+        ecosystem="npm",
+    )
+
+    try:
+        orchestrator = SecurityOrchestrator()
+        license_data = get_npm_license(payload.package_name)
+        analysis = orchestrator.analyze_package(
+            package_name=payload.package_name,
+            version="*",
+            license_data=license_data,
+            osv_results=osv_summary,
+        )
+    except SecurityOrchestratorError as exc:
+        logger.error("Security orchestrator unavailable: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    analysis = _apply_legal_check(analysis, license_data)
+
+    _create_scan_result_record(
+        db=db,
+        package=package,
+        analysis=analysis,
+        cvss_max_score=osv_check.cvss_max_score,
+    )
+
+    return ScanResponse(
+        status=_map_llm_status(analysis["status"]).value,
+        license_type=analysis.get("license_type") or "Unknown",
+        cve_summary=analysis.get("cve_summary") or "",
+        ai_explanation=analysis.get("ai_explanation") or "",
+        alternatives=[],
+    )
+
+
 @router.post("/", response_model=ScanResultResponse, status_code=status.HTTP_201_CREATED)
 def create_scan(
     payload: ScanRequest,
@@ -114,6 +186,8 @@ def create_scan(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(exc),
         ) from exc
+
+    analysis = _apply_legal_check(analysis, license_data)
 
     return _create_scan_result_record(
         db=db,
@@ -201,6 +275,7 @@ async def pre_push_scan(
             license_data=license_data,
             osv_results=osv_summary,
         )
+        analysis = _apply_legal_check(analysis, license_data)
         status_value = str(analysis.get("status", "")).strip().upper()
 
         if status_value == "BLOCKED":
