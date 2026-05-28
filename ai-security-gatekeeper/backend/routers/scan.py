@@ -311,6 +311,7 @@ async def pre_push_scan(
     per_package_summaries: list[str] = []
     ai_notes: list[str] = []
     max_cvss_score: float | None = None
+    failures: list[dict[str, Any]] = []
 
     for package_name, package_version in top_dependencies:
         pkg_license_data = get_npm_license(package_name)
@@ -337,6 +338,15 @@ async def pre_push_scan(
             blocked_count += 1
         elif status_value == "WARNING":
             warning_count += 1
+
+        if status_value in ("BLOCKED", "WARNING"):
+            failures.append({
+                "package": package_name,
+                "version": package_version,
+                "status": status_value,
+                "reason": pkg_analysis.get("ai_explanation", "").strip(),
+                "recommendation": pkg_analysis.get("recommendation", "").strip(),
+            })
 
         per_package_summaries.append(
             f"{package_name}@{package_version}: {pkg_analysis['status']}"
@@ -391,4 +401,5 @@ async def pre_push_scan(
         "status": stored_scan.status.value,
         "scan_id": stored_scan.id,
         "summary": short_summary,
+        "failures": failures,
     }
