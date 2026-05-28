@@ -9,7 +9,7 @@ from backend.agents.orchestrator import SecurityOrchestrator, SecurityOrchestrat
 from backend.database import get_db
 from backend.models import Package, ScanResult, ScanStatus
 from backend.schemas import ScanRequest, ScanResultResponse, SimpleScanRequest, ScanResponse
-from backend.services.legal_agent import analyze_license  # הורדנו את ה-DEFAULT_PROJECT_POLICY הסטטי
+from backend.services.legal_agent import analyze_license
 from backend.services.npm import get_npm_license
 from backend.services.osv import check_osv_vulnerabilities, query_osv
 
@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
 
-# Separator used to encode both explanation and recommendation in the single
-# ai_explanation DB column.  The schema validator splits on this at read time.
 _RECOMMENDATION_SEP = "\n\n===RECOMMENDATION===\n\n"
 
 _LLM_STATUS_TO_DB: dict[str, ScanStatus] = {
@@ -39,6 +37,7 @@ def _create_scan_result_record(
     package: Package,
     analysis: dict[str, str],
     cvss_max_score: float | None = None,
+    source: str = "manual",          # ← NEW: "manual" | "pre-push"
 ) -> ScanResult:
     explanation = analysis["ai_explanation"]
     recommendation = analysis.get("recommendation", "").strip()
@@ -54,6 +53,7 @@ def _create_scan_result_record(
         cvss_max_score=cvss_max_score,
         license_type=analysis["license_type"],
         ai_explanation=stored_explanation,
+        source=source,                # ← NEW
     )
     db.add(scan_result)
     db.commit()
@@ -105,30 +105,21 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanResult:
     return result
 
 
-# 🌟 עדכון: הוספנו db: Session כפרמטר לפונקציית העזר
 def _apply_legal_check(package_name: str, analysis: dict[str, str], license_data: str, db: Session) -> dict[str, str]:
-    """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
-
-    Returns a (possibly updated) copy of *analysis* — the original dict is never mutated.
-    ai_explanation receives only the risk reason; recommendation receives the alternatives.
-    """
-    # 🌟 כאן החלפנו את ה-DEFAULT_PROJECT_POLICY הקבוע בחיבור ה-db החי!
     legal = analyze_license(package_name, license_data, db)
     if legal["status"] != "BLOCKED":
         return analysis
 
     updated = dict(analysis)
     updated["status"] = "BLOCKED"
-    risk = legal["risk_level"].capitalize()  # "High" / "Medium" / "Low"
+    risk = legal["risk_level"].capitalize()
 
-    # ai_explanation = risk prose only (prepend legal reason, keep existing prose)
     legal_reason = f"License compliance issue ({risk} risk): {legal['reason']}"
     existing_explanation = updated.get("ai_explanation", "").strip()
     updated["ai_explanation"] = (
         f"{legal_reason}\n\n{existing_explanation}" if existing_explanation else legal_reason
     )
 
-    # recommendation = alternatives only (legal agent takes priority over orchestrator)
     alt = legal.get("suggested_alternative", "").strip()
     if alt:
         updated["recommendation"] = f"Replace with a permissively licensed alternative: {alt}"
@@ -146,7 +137,6 @@ def scan_package(
     payload: SimpleScanRequest,
     db: Session = Depends(get_db),
 ) -> ScanResponse:
-    """Simplified scan endpoint — accepts only a package name, defaults to npm/latest."""
     scan_req = ScanRequest(name=payload.package_name, version="*", ecosystem="npm")
     package = _get_or_create_package(db, scan_req)
 
@@ -177,7 +167,6 @@ def scan_package(
             detail=str(exc),
         ) from exc
 
-    # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית
     analysis = _apply_legal_check(payload.package_name, analysis, license_data, db)
 
     _create_scan_result_record(
@@ -185,6 +174,7 @@ def scan_package(
         package=package,
         analysis=analysis,
         cvss_max_score=osv_check.cvss_max_score,
+        source="manual",              # ← manual scan
     )
 
     explanation = analysis.get("ai_explanation") or ""
@@ -241,7 +231,6 @@ def create_scan(
             detail=str(exc),
         ) from exc
 
-    # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית
     analysis = _apply_legal_check(payload.name, analysis, license_data, db)
 
     return _create_scan_result_record(
@@ -249,6 +238,7 @@ def create_scan(
         package=package,
         analysis=analysis,
         cvss_max_score=osv_check.cvss_max_score,
+        source="manual",              # ← manual scan
     )
 
 
@@ -331,8 +321,6 @@ async def pre_push_scan(
             license_data=pkg_license_data,
             osv_results=pkg_osv_summary,
         )
-        
-        # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית בלולאת ה-pre-push
         pkg_analysis = _apply_legal_check(package_name, pkg_analysis, pkg_license_data, db)
         status_value = str(pkg_analysis.get("status", "")).strip().upper()
 
@@ -353,7 +341,7 @@ async def pre_push_scan(
         per_package_summaries.append(
             f"{package_name}@{package_version}: {pkg_analysis['status']}"
         )
-        
+
         pkg_explanation = pkg_analysis.get("ai_explanation", "")
         pkg_recommendation = pkg_analysis.get("recommendation", "").strip()
         section = f"{package_name}@{package_version}\n{pkg_explanation}"
@@ -395,10 +383,12 @@ async def pre_push_scan(
         package=aggregate_package,
         analysis=combined_analysis,
         cvss_max_score=max_cvss_score,
+        source="pre-push",            # ← pre-push scan
     )
 
     return {
         "status": stored_scan.status.value,
         "scan_id": stored_scan.id,
         "summary": short_summary,
+        "failures": failures,
     }

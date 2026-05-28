@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import List
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -46,11 +47,10 @@ class ScanResultResponse(BaseModel):
     recommendation: str | None = None
     scanned_at: datetime
     package: PackageResponse
+    source: str = "manual"            # ← NEW: "manual" | "pre-push"
 
     @model_validator(mode="after")
     def split_recommendation(self) -> "ScanResultResponse":
-        # For batch scans (license_type == "Mixed"), recommendations are embedded
-        # within each section — leave ai_explanation intact for frontend parsing.
         if self.license_type == "Mixed":
             return self
         if self.ai_explanation and _RECOMMENDATION_SEP in self.ai_explanation:
@@ -71,7 +71,7 @@ class SimpleScanRequest(BaseModel):
 
 
 class ScanResponse(BaseModel):
-    status: str  # "APPROVED" | "WARNING" | "BLOCKED"
+    status: str
     license_type: str
     cve_summary: str
     ai_explanation: str
@@ -92,6 +92,7 @@ class HistoryItemResponse(BaseModel):
     recommendation: str | None = None
     scanned_at: datetime
     package: PackageResponse
+    source: str = "manual"            # ← NEW: "manual" | "pre-push"
 
     @model_validator(mode="after")
     def split_recommendation(self) -> "HistoryItemResponse":
@@ -104,16 +105,15 @@ class HistoryItemResponse(BaseModel):
         return self
 
 
-from pydantic import BaseModel
-from typing import List
-
 class PolicyBase(BaseModel):
     context: str
     allowed_licenses: List[str]
     blocked_licenses: List[str]
 
+
 class PolicyCreate(PolicyBase):
     pass
+
 
 class PolicyResponse(PolicyBase):
     id: int
