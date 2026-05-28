@@ -24,11 +24,10 @@ DECISION ENGINE:
 - Severity > 7.0 (CVSS) is an automatic 'BLOCKED'.
 - Always output a valid JSON with exactly these keys: 'status', 'cve_summary', 'license_type', 'ai_explanation', 'recommendation'.
 - The 'ai_explanation' field must contain ONLY the risk description: concise plain-English prose (2–3 sentences) explaining what the vulnerability is and why it matters. Do NOT include any fix suggestions or package alternatives in this field.
-- The 'recommendation' field must contain ONLY the actionable fix. When status is 'BLOCKED', name 1–2 real, installable npm packages or native Node.js/browser APIs (e.g. "Replace with validator.js for input sanitisation" or "Use Node's built-in crypto module instead"). When status is 'WARNING', suggest an upgrade command or audit step. When status is 'APPROVE', set this to an empty string.
+- The 'recommendation' field MUST contain actionable remediation advice. If the status is 'BLOCKED' or 'WARNING', you MUST first mentally identify the core technical functionality of the package, and then explicitly name 1-2 real, widely-used npm package alternatives (e.g., "Replace with Ramda" for lodash) OR explicitly recommend upgrading to a patched version (e.g., "Upgrade to lodash@4.17.21 or latest"). Do NOT leave this empty if a risk is found. Set to an empty string ONLY if status is 'APPROVE'.
 
 ANTI-HALLUCINATION:
 Do not guess or infer licenses. Use the explicit 'License found in registry' provided in the user prompt. If the license is 'Unknown', state 'Unknown' and base your policy decision purely on vulnerabilities."""
-
 
 class SecurityOrchestratorError(Exception):
     pass

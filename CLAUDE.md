@@ -4,23 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**AI Security Gatekeeper** is a full-stack security analysis platform for open-source dependencies. It combines the OSV vulnerability database with Groq's Llama 3.3 70B LLM to provide intelligent, policy-driven security decisions (APPROVED / WARNING / BLOCKED). It integrates with GitHub webhooks and git pre-push hooks.
+**AI Security Gatekeeper** is a full-stack security analysis platform for open-source dependencies. It combines the OSV vulnerability database with Groq's Llama 3.3 70B LLM and a legal compliance agent to produce policy-driven security decisions (APPROVED / WARNING / BLOCKED). It integrates with GitHub webhooks and git pre-push hooks.
 
 ## Repository Layout
 
 The actual project lives in the `ai-security-gatekeeper/` subdirectory:
 ```
 ai-security-gatekeeper/
-├── backend/           # FastAPI app
-│   ├── agents/        # LLM orchestration (Groq/Langchain)
-│   ├── routers/       # scan.py, history.py, webhook.py
-│   ├── services/      # osv.py (OSV API), npm.py (npm registry)
+├── backend/
+│   ├── agents/orchestrator.py    # Core AI engine (Groq + LangChain)
+│   ├── routers/                  # scan.py, history.py, webhook.py
+│   ├── services/
+│   │   ├── legal_agent.py        # SPDX license compliance via Groq
+│   │   ├── osv.py                # OSV vulnerability API (LRU-cached)
+│   │   └── npm.py                # npm registry license lookup
+│   ├── models.py                 # SQLAlchemy: Package, ScanResult
+│   ├── schemas.py                # Pydantic schemas with model_validator
 │   └── tests/
-└── frontend/          # React + Vite + Tailwind
+└── frontend/
+    ├── main.jsx                  # BrowserRouter with / and /scan/:scanId routes
     └── src/
-        ├── api/       # Axios client (localhost:8000)
-        ├── components/
-        └── utils/
+        ├── api/                  # client.js (axios), scan.ts (typed)
+        ├── components/           # ScanForm, ScanResultCard, RemediationDashboard, HistoryTable, Header
+        ├── types/api.ts          # TypeScript interfaces
+        └── utils/statusTheme.js  # Status → visual style mapping
 ```
 
 ## Common Commands
@@ -33,10 +40,8 @@ All commands run from `ai-security-gatekeeper/` unless noted.
 # Start database
 docker compose up -d
 
-# Set up and activate virtualenv (first time)
-python -m venv .venv
-source .venv/Scripts/activate   # Windows bash
-# source .venv/bin/activate     # Linux/macOS
+# Activate virtualenv (Windows bash)
+source /c/ai-security-gatekeeper/.venv/Scripts/activate
 
 pip install -r requirements.txt
 
@@ -52,8 +57,7 @@ API docs: http://localhost:8000/docs
 cd frontend
 npm install
 npm run dev      # http://localhost:5173
-npm run build    # production build to dist/
-npm run preview  # preview production build
+npm run build
 ```
 
 ### Tests
@@ -61,7 +65,7 @@ npm run preview  # preview production build
 ```bash
 # From ai-security-gatekeeper/
 python -m pytest backend/tests/
-python -m pytest backend/tests/test_npm_service.py  # single file
+python -m pytest backend/tests/test_legal_agent.py   # single file
 ```
 
 ### Git Pre-Push Hook
@@ -75,30 +79,58 @@ python create_hook.py   # generates .git/hooks/pre-push script
 ### Request Flow
 
 ```
-Frontend ScanForm → POST /api/scan/
-  → OSV API (vulnerability lookup)
-  → npm Registry (license info)
+Frontend ScanForm  →  POST /api/scan
+  → npm Registry (license)
+  → OSV API (CVE/CVSS)
   → SecurityOrchestrator (Groq Llama 3.3 70B)
+      → returns {status, cve_summary, license_type, ai_explanation, recommendation}
+  → LegalAgent (Groq) validates SPDX license
+      → escalates to BLOCKED + sets recommendation if non-compliant
   → ScanResult persisted to PostgreSQL
-  → Response: {status, cve_summary, license_type, ai_explanation}
+  → Response: ScanResponse (includes recommendation field)
+
+Frontend /scan/:scanId  →  GET /api/scan/{scan_id}
+  → ScanResultResponse (model_validator splits stored ai_explanation into
+    ai_explanation + recommendation before returning JSON)
 ```
+
+### Analysis Dict — the internal currency
+
+Every function in `scan.py` and `orchestrator.py` passes analysis as a `dict[str, str]` with exactly these keys:
+
+| Key | Contains |
+|-----|----------|
+| `status` | `APPROVE` / `WARNING` / `BLOCKED` |
+| `cve_summary` | Per-package CVE line items |
+| `license_type` | SPDX identifier or `"Unknown"` / `"Mixed"` |
+| `ai_explanation` | Risk prose only — no fix suggestions |
+| `recommendation` | Actionable fix + named npm alternatives |
+
+### DB Storage Pattern (Critical)
+
+The `ScanResult` model has a single `ai_explanation` Text column. Both fields are stored together using a sentinel separator:
+
+```
+ai_explanation column = "{risk prose}\n\n===RECOMMENDATION===\n\n{fix text}"
+```
+
+Defined as `_RECOMMENDATION_SEP` in both `scan.py` and `schemas.py` (must stay in sync).
+
+At **read time**, `ScanResultResponse` and `HistoryItemResponse` use a Pydantic `model_validator(mode="after")` to split on this separator and populate the virtual `recommendation` field. **Batch scans** (`license_type == "Mixed"`) skip the top-level split because they embed `===RECOMMENDATION===` within each per-package section of `ai_explanation`, separated by `\n\n---\n\n`.
 
 ### Key Components
 
-**`backend/agents/orchestrator.py`** — Core AI engine. Sends package metadata + OSV results to Groq. Returns one of four statuses:
-- `BLOCKED` — CRITICAL_EXECUTION, DATA_INTEGRITY, COMPLIANCE violations, or CVSS ≥ 7.0
-- `WARNING` — OPERATIONAL risk or LLM fallback
-- `APPROVED` — No significant findings
+**`backend/agents/orchestrator.py`** — LLM engine. Sends package + OSV data to Groq, parses JSON response with keys `status / cve_summary / license_type / ai_explanation / recommendation`. Applies enterprise policy overrides (CVSS ≥ 7.0 or RCE keywords → force BLOCKED). Falls back to WARNING on LLM errors.
 
-**`backend/routers/scan.py`** — Two endpoints:
-- `POST /api/scan/` — single package scan
-- `POST /api/scan/pre-push/` — batch scan of top 10 deps from package.json (used by git hook)
+**`backend/services/legal_agent.py`** — Second Groq call for SPDX compliance. Approved: MIT, Apache-2.0, BSD-*, ISC, Unlicense. Blocked: GPL, AGPL, LGPL, SSPL, Commons Clause, Unknown. Returns `{status, reason, risk_level, suggested_alternative}`. Called via `_apply_legal_check()` in `scan.py` after the orchestrator — if BLOCKED, overwrites `ai_explanation` with the legal reason and sets `recommendation` to the suggested npm alternative.
 
-**`backend/routers/webhook.py`** — GitHub webhook handler; fetches package.json at commit SHA, scans top 3 deps, posts commit status back to GitHub as a background task.
+**`backend/routers/scan.py`** — Endpoints:
+- `POST /api/scan` — single package (SimpleScanRequest: `package_name` only, defaults npm/*)
+- `POST /api/scan/` — full scan (ScanRequest: name + version + ecosystem)
+- `GET /api/scan/{scan_id}` — fetch stored result for Remediation Dashboard
+- `POST /api/scan/pre-push/` — batch scan of top 10 deps from package.json payload
 
-**`backend/services/osv.py`** — LRU-cached OSV API queries. Normalizes ecosystem names and extracts CVE IDs, summaries, CVSS scores.
-
-**`frontend/src/utils/statusTheme.js`** — Maps scan status to visual styling (gradients, colors, glows).
+**`frontend/src/components/RemediationDashboard.jsx`** — Route `/scan/:scanId`. Parses batch vs single results from the stored `ai_explanation`. For batch scans, splits sections on `\n\n---\n\n`, then splits each section on `\n\n===RECOMMENDATION===\n\n` to extract per-package `explanation` and `recommendation`. Renders `DependencyCard` with separate "Why flagged" and "Recommended Fix" panels; the `parseRecommendation()` helper further splits `"Replace with X: pkg1, pkg2"` to render alternative packages as pill badges.
 
 ### Environment Variables
 
@@ -112,6 +144,6 @@ GROQ_API_KEY=<your_groq_api_key>
 
 PostgreSQL via Docker. Two models (`backend/models.py`):
 - `Package` — name, version, ecosystem
-- `ScanResult` — FK to Package, status enum, cve_summary, license_type, ai_explanation, timestamp
+- `ScanResult` — FK to Package, status enum, cve_summary, cvss_max_score, license_type, ai_explanation (stores both explanation + recommendation via separator), scanned_at
 
-Tables are created automatically on backend startup via SQLAlchemy `Base.metadata.create_all`.
+Tables are created automatically on backend startup via `Base.metadata.create_all`.

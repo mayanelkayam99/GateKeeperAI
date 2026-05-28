@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 # Prompt — Universal Legal Agent (No hardcoded company info)
 # ---------------------------------------------------------------------------
 _LEGAL_SYSTEM_PROMPT = (
-    "You are an expert legal compliance officer evaluating open-source software licenses. "
-    "Analyze the license text strictly against the specific 'Company policy' provided by the user. "
-    "If the license contains any clauses that violate the provided Company policy, you MUST return a BLOCKED status.\n"
+    "You are a strict Legal & Compliance DevSecOps Agent evaluating open-source software licenses.\n"
+    "CRITICAL COMPANY CONTEXT: Our company operates in the cybersecurity industry, providing automated security monitoring and vulnerability scanning.\n"
+    "Your job is to read raw license texts. If a license explicitly restricts or prohibits use by cybersecurity companies, you MUST return a BLOCKED status immediately, even if it looks like a standard open-source license (e.g., MIT).\n"
     "Return a JSON object with exactly these fields:\n"
     '  "status": "APPROVED" or "BLOCKED"\n'
     '  "reason": concise one-sentence explanation of the compliance decision\n'

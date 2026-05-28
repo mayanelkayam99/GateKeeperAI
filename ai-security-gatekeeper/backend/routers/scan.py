@@ -184,14 +184,24 @@ def scan_package(
         cvss_max_score=osv_check.cvss_max_score,
     )
 
+    # --- תחילת התיקון ---
+    explanation = analysis.get("ai_explanation") or ""
+    recommendation = analysis.get("recommendation") or ""
+
+    # אם קיימת המלצה, אנחנו משרשרים אותה לתוך ההסבר בעזרת המפריד
+    # בדיוק כמו שהפרונטאנד (RemediationDashboard) מצפה לקבל את זה
+    if recommendation and _RECOMMENDATION_SEP not in explanation:
+        explanation = f"{explanation}{_RECOMMENDATION_SEP}{recommendation}"
+
     return ScanResponse(
         status=_map_llm_status(analysis["status"]).value,
         license_type=analysis.get("license_type") or "Unknown",
         cve_summary=analysis.get("cve_summary") or "",
-        ai_explanation=analysis.get("ai_explanation") or "",
-        recommendation=analysis.get("recommendation") or "",
+        ai_explanation=explanation,  # עכשיו המחרוזת המחוברת נשלחת לממשק!
+        recommendation=recommendation,
         alternatives=[],
     )
+    # --- סוף התיקון ---
 
 
 @router.post("/", response_model=ScanResultResponse, status_code=status.HTTP_201_CREATED)
