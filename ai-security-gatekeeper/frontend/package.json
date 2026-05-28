@@ -10,7 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lodash": "4.17.20"
+    "lodash": "4.17.20",
+    "axios": "0.21.0",
+    "minimist": "1.2.5"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
