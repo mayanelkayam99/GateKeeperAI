@@ -78,6 +78,22 @@ def _get_or_create_package(db: Session, payload: ScanRequest) -> Package:
     return package
 
 
+@router.get("/{scan_id}", response_model=ScanResultResponse)
+def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanResult:
+    result = (
+        db.query(ScanResult)
+        .options(joinedload(ScanResult.package))
+        .filter(ScanResult.id == scan_id)
+        .first()
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan {scan_id} not found.",
+        )
+    return result
+
+
 def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str, str]:
     """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
 

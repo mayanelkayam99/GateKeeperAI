@@ -28,3 +28,8 @@ export async function fetchScanById(scanId) {
   const { data } = await api.get(`/api/history/${scanId}`);
   return data;
 }
+
+export async function fetchRemediationScan(scanId) {
+  const { data } = await api.get(`/api/scan/${scanId}`);
+  return data;
+}
