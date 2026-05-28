@@ -8,7 +8,7 @@ set -euo pipefail
 
 API_URL="${AI_GATEKEEPER_API_URL:-http://127.0.0.1:8000/api/scan/pre-push/}"
 UI_URL_BASE="${AI_GATEKEEPER_UI_URL:-http://localhost:5173}"
-PACKAGE_JSON_PATH="package.json"
+PACKAGE_JSON_PATH="frontend\package.json"
 PYTHON_BIN="python"
 
 if [[ ! -f "$PACKAGE_JSON_PATH" ]]; then
