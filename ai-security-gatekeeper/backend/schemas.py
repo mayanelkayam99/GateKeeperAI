@@ -1,8 +1,11 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.models import ScanStatus
+
+# Must match the constant in backend/routers/scan.py
+_RECOMMENDATION_SEP = "\n\n===RECOMMENDATION===\n\n"
 
 
 class PackageCreate(BaseModel):
@@ -40,8 +43,21 @@ class ScanResultResponse(BaseModel):
     cvss_max_score: float | None
     license_type: str | None
     ai_explanation: str | None
+    recommendation: str | None = None
     scanned_at: datetime
     package: PackageResponse
+
+    @model_validator(mode="after")
+    def split_recommendation(self) -> "ScanResultResponse":
+        # For batch scans (license_type == "Mixed"), recommendations are embedded
+        # within each section — leave ai_explanation intact for frontend parsing.
+        if self.license_type == "Mixed":
+            return self
+        if self.ai_explanation and _RECOMMENDATION_SEP in self.ai_explanation:
+            parts = self.ai_explanation.split(_RECOMMENDATION_SEP, 1)
+            self.ai_explanation = parts[0].strip() or None
+            self.recommendation = parts[1].strip() or None
+        return self
 
 
 class ScanRequest(BaseModel):
@@ -59,6 +75,7 @@ class ScanResponse(BaseModel):
     license_type: str
     cve_summary: str
     ai_explanation: str
+    recommendation: str = ""
     alternatives: list[str]
 
 
@@ -72,5 +89,16 @@ class HistoryItemResponse(BaseModel):
     cvss_max_score: float | None
     license_type: str | None
     ai_explanation: str | None
+    recommendation: str | None = None
     scanned_at: datetime
     package: PackageResponse
+
+    @model_validator(mode="after")
+    def split_recommendation(self) -> "HistoryItemResponse":
+        if self.license_type == "Mixed":
+            return self
+        if self.ai_explanation and _RECOMMENDATION_SEP in self.ai_explanation:
+            parts = self.ai_explanation.split(_RECOMMENDATION_SEP, 1)
+            self.ai_explanation = parts[0].strip() or None
+            self.recommendation = parts[1].strip() or None
+        return self

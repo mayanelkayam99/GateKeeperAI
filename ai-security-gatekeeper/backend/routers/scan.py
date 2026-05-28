@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/scan", tags=["scan"])
 
+# Separator used to encode both explanation and recommendation in the single
+# ai_explanation DB column.  The schema validator splits on this at read time.
+_RECOMMENDATION_SEP = "\n\n===RECOMMENDATION===\n\n"
+
 _LLM_STATUS_TO_DB: dict[str, ScanStatus] = {
     "APPROVE": ScanStatus.APPROVED,
     "APPROVED": ScanStatus.APPROVED,
@@ -36,13 +40,20 @@ def _create_scan_result_record(
     analysis: dict[str, str],
     cvss_max_score: float | None = None,
 ) -> ScanResult:
+    explanation = analysis["ai_explanation"]
+    recommendation = analysis.get("recommendation", "").strip()
+    stored_explanation = (
+        f"{explanation}{_RECOMMENDATION_SEP}{recommendation}"
+        if recommendation
+        else explanation
+    )
     scan_result = ScanResult(
         package_id=package.id,
         status=_map_llm_status(analysis["status"]),
         cve_summary=analysis["cve_summary"],
         cvss_max_score=cvss_max_score,
         license_type=analysis["license_type"],
-        ai_explanation=analysis["ai_explanation"],
+        ai_explanation=stored_explanation,
     )
     db.add(scan_result)
     db.commit()
@@ -98,6 +109,7 @@ def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str,
     """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
 
     Returns a (possibly updated) copy of *analysis* — the original dict is never mutated.
+    ai_explanation receives only the risk reason; recommendation receives the alternatives.
     """
     legal = analyze_license(license_data, DEFAULT_PROJECT_POLICY)
     if legal["status"] != "BLOCKED":
@@ -107,15 +119,23 @@ def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str,
     updated["status"] = "BLOCKED"
     risk = legal["risk_level"].capitalize()  # "High" / "Medium" / "Low"
 
-    legal_note_parts = [f"License compliance issue ({risk} risk):\n{legal['reason']}"]
+    # ai_explanation = risk prose only (prepend legal reason, keep existing prose)
+    legal_reason = f"License compliance issue ({risk} risk): {legal['reason']}"
+    existing_explanation = updated.get("ai_explanation", "").strip()
+    updated["ai_explanation"] = (
+        f"{legal_reason}\n\n{existing_explanation}" if existing_explanation else legal_reason
+    )
 
+    # recommendation = alternatives only (legal agent takes priority over orchestrator)
     alt = legal.get("suggested_alternative", "").strip()
     if alt:
-        legal_note_parts.append(f"Suggested alternatives: {alt}")
+        updated["recommendation"] = f"Replace with a permissively licensed alternative: {alt}"
+    elif not updated.get("recommendation", "").strip():
+        updated["recommendation"] = (
+            "Replace with a dependency using an approved SPDX license "
+            "(MIT, Apache-2.0, BSD-2-Clause, or ISC)."
+        )
 
-    legal_note = "\n\n".join(legal_note_parts)
-    existing = updated.get("ai_explanation", "").strip()
-    updated["ai_explanation"] = f"{legal_note}\n\n{existing}" if existing else legal_note
     return updated
 
 
@@ -169,6 +189,7 @@ def scan_package(
         license_type=analysis.get("license_type") or "Unknown",
         cve_summary=analysis.get("cve_summary") or "",
         ai_explanation=analysis.get("ai_explanation") or "",
+        recommendation=analysis.get("recommendation") or "",
         alternatives=[],
     )
 
@@ -282,38 +303,47 @@ async def pre_push_scan(
     max_cvss_score: float | None = None
 
     for package_name, package_version in top_dependencies:
-        license_data = get_npm_license(package_name)
-        osv_summary = check_osv_vulnerabilities(
+        pkg_license_data = get_npm_license(package_name)
+        pkg_osv_summary = check_osv_vulnerabilities(
             package_name=package_name,
             version=package_version,
             ecosystem="npm",
         )
-        osv_check = query_osv(
+        pkg_osv_check = query_osv(
             package_name=package_name,
             version=package_version,
             ecosystem="npm",
         )
-        analysis = orchestrator.analyze_package(
+        pkg_analysis = orchestrator.analyze_package(
             package_name=package_name,
             version=package_version,
-            license_data=license_data,
-            osv_results=osv_summary,
+            license_data=pkg_license_data,
+            osv_results=pkg_osv_summary,
         )
-        analysis = _apply_legal_check(analysis, license_data)
-        status_value = str(analysis.get("status", "")).strip().upper()
+        pkg_analysis = _apply_legal_check(pkg_analysis, pkg_license_data)
+        status_value = str(pkg_analysis.get("status", "")).strip().upper()
 
         if status_value == "BLOCKED":
             blocked_count += 1
         elif status_value == "WARNING":
             warning_count += 1
 
-        per_package_summaries.append(f"{package_name}@{package_version}: {analysis['status']}")
-        ai_notes.append(f"{package_name}@{package_version}\n{analysis['ai_explanation']}")
-        if osv_check.cvss_max_score is not None:
+        per_package_summaries.append(
+            f"{package_name}@{package_version}: {pkg_analysis['status']}"
+        )
+        # Embed recommendation within the section so the frontend can parse it per package
+        pkg_explanation = pkg_analysis.get("ai_explanation", "")
+        pkg_recommendation = pkg_analysis.get("recommendation", "").strip()
+        section = f"{package_name}@{package_version}\n{pkg_explanation}"
+        if pkg_recommendation:
+            section += f"{_RECOMMENDATION_SEP}{pkg_recommendation}"
+        ai_notes.append(section)
+
+        if pkg_osv_check.cvss_max_score is not None:
             if max_cvss_score is None:
-                max_cvss_score = osv_check.cvss_max_score
+                max_cvss_score = pkg_osv_check.cvss_max_score
             else:
-                max_cvss_score = max(max_cvss_score, osv_check.cvss_max_score)
+                max_cvss_score = max(max_cvss_score, pkg_osv_check.cvss_max_score)
 
     if blocked_count > 0:
         final_status = "BLOCKED"
@@ -329,7 +359,10 @@ async def pre_push_scan(
         "status": final_status,
         "cve_summary": "\n".join(per_package_summaries),
         "license_type": "Mixed",
+        # Sections contain embedded ===RECOMMENDATION=== separators so the
+        # frontend can parse explanation and recommendation per package.
         "ai_explanation": "\n\n---\n\n".join(ai_notes),
+        "recommendation": "",  # Per-package recommendations embedded in ai_explanation sections
     }
     aggregate_scan_request = ScanRequest(
         name="pre-push dependency batch",

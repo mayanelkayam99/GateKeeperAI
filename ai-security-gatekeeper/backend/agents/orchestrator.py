@@ -22,8 +22,9 @@ DECISION ENGINE:
 - Any vulnerability categorized as CRITICAL_EXECUTION or DATA_INTEGRITY must result in 'BLOCKED'.
 - Any COMPLIANCE violation must result in 'BLOCKED'.
 - Severity > 7.0 (CVSS) is an automatic 'BLOCKED'.
-- Always output a valid JSON with keys: 'status', 'cve_summary', 'license_type', 'ai_explanation'.
-- The 'ai_explanation' field must be concise plain-English prose (2–4 sentences). Do not repeat or restate the status value. Describe what the specific risk is and why it matters to a developer. When status is 'BLOCKED', you MUST end the explanation by naming 1-2 real, installable npm packages or native Node.js/browser APIs the developer can use as a replacement — for example: "Replace with validator.js for input sanitisation" or "Use Node's built-in crypto module instead of this package".
+- Always output a valid JSON with exactly these keys: 'status', 'cve_summary', 'license_type', 'ai_explanation', 'recommendation'.
+- The 'ai_explanation' field must contain ONLY the risk description: concise plain-English prose (2–3 sentences) explaining what the vulnerability is and why it matters. Do NOT include any fix suggestions or package alternatives in this field.
+- The 'recommendation' field must contain ONLY the actionable fix. When status is 'BLOCKED', name 1–2 real, installable npm packages or native Node.js/browser APIs (e.g. "Replace with validator.js for input sanitisation" or "Use Node's built-in crypto module instead"). When status is 'WARNING', suggest an upgrade command or audit step. When status is 'APPROVE', set this to an empty string.
 
 ANTI-HALLUCINATION:
 Do not guess or infer licenses. Use the explicit 'License found in registry' provided in the user prompt. If the license is 'Unknown', state 'Unknown' and base your policy decision purely on vulnerabilities."""
@@ -136,6 +137,7 @@ def _validate_analysis_payload(payload: dict[str, Any], osv_results: str) -> dic
         "license_type": str(payload["license_type"]).strip() or "Unknown",
         "ai_explanation": str(payload["ai_explanation"]).strip()
         or "Analysis completed without a detailed explanation.",
+        "recommendation": str(payload.get("recommendation", "")).strip(),
     }
 
 
@@ -148,6 +150,7 @@ def _fallback_analysis(osv_results: str, reason: str) -> dict[str, str]:
             f"Automated analysis unavailable — manual review recommended.\n\n"
             f"Details: {reason}"
         ),
+        "recommendation": "Run npm audit to identify issues and apply available patches.",
     }
     return _apply_enterprise_policy(
         package_name="unknown-package",
@@ -179,6 +182,7 @@ def _apply_enterprise_policy(
 
     # Default: use the LLM's own explanation — no redundant status prefix.
     concise_explanation = cleaned_explanation or "No further details available."
+    recommendation = str(analysis.get("recommendation", "")).strip()
 
     osv_text = osv_results.lower()
     has_rce_keyword = any(
@@ -206,10 +210,18 @@ def _apply_enterprise_policy(
             if cleaned_explanation
             else policy_block
         )
+        # Only override recommendation if the LLM didn't provide one
+        if not recommendation:
+            recommendation = (
+                "Upgrade to the latest patched version immediately. "
+                "Run `npm audit fix` to apply automatic patches, or check the package's "
+                "GitHub security advisories for the minimum safe version."
+            )
 
     return {
         "status": status,
         "cve_summary": str(analysis.get("cve_summary", "")).strip() or osv_results,
         "license_type": str(analysis.get("license_type", "")).strip() or "Unknown",
         "ai_explanation": concise_explanation,
+        "recommendation": recommendation,
     }
