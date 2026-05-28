@@ -9,7 +9,7 @@ from backend.agents.orchestrator import SecurityOrchestrator, SecurityOrchestrat
 from backend.database import get_db
 from backend.models import Package, ScanResult, ScanStatus
 from backend.schemas import ScanRequest, ScanResultResponse, SimpleScanRequest, ScanResponse
-from backend.services.legal_agent import DEFAULT_PROJECT_POLICY, analyze_license
+from backend.services.legal_agent import analyze_license  # הורדנו את ה-DEFAULT_PROJECT_POLICY הסטטי
 from backend.services.npm import get_npm_license
 from backend.services.osv import check_osv_vulnerabilities, query_osv
 
@@ -105,13 +105,15 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanResult:
     return result
 
 
-def _apply_legal_check(package_name: str, analysis: dict[str, str], license_data: str) -> dict[str, str]:
+# 🌟 עדכון: הוספנו db: Session כפרמטר לפונקציית העזר
+def _apply_legal_check(package_name: str, analysis: dict[str, str], license_data: str, db: Session) -> dict[str, str]:
     """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
 
     Returns a (possibly updated) copy of *analysis* — the original dict is never mutated.
     ai_explanation receives only the risk reason; recommendation receives the alternatives.
     """
-    legal = analyze_license(package_name, license_data, DEFAULT_PROJECT_POLICY)
+    # 🌟 כאן החלפנו את ה-DEFAULT_PROJECT_POLICY הקבוע בחיבור ה-db החי!
+    legal = analyze_license(package_name, license_data, db)
     if legal["status"] != "BLOCKED":
         return analysis
 
@@ -175,7 +177,8 @@ def scan_package(
             detail=str(exc),
         ) from exc
 
-    analysis = _apply_legal_check(payload.package_name, analysis, license_data)
+    # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית
+    analysis = _apply_legal_check(payload.package_name, analysis, license_data, db)
 
     _create_scan_result_record(
         db=db,
@@ -184,12 +187,9 @@ def scan_package(
         cvss_max_score=osv_check.cvss_max_score,
     )
 
-    # --- תחילת התיקון ---
     explanation = analysis.get("ai_explanation") or ""
     recommendation = analysis.get("recommendation") or ""
 
-    # אם קיימת המלצה, אנחנו משרשרים אותה לתוך ההסבר בעזרת המפריד
-    # בדיוק כמו שהפרונטאנד (RemediationDashboard) מצפה לקבל את זה
     if recommendation and _RECOMMENDATION_SEP not in explanation:
         explanation = f"{explanation}{_RECOMMENDATION_SEP}{recommendation}"
 
@@ -197,11 +197,10 @@ def scan_package(
         status=_map_llm_status(analysis["status"]).value,
         license_type=analysis.get("license_type") or "Unknown",
         cve_summary=analysis.get("cve_summary") or "",
-        ai_explanation=explanation,  # עכשיו המחרוזת המחוברת נשלחת לממשק!
+        ai_explanation=explanation,
         recommendation=recommendation,
         alternatives=[],
     )
-    # --- סוף התיקון ---
 
 
 @router.post("/", response_model=ScanResultResponse, status_code=status.HTTP_201_CREATED)
@@ -242,7 +241,8 @@ def create_scan(
             detail=str(exc),
         ) from exc
 
-    analysis = _apply_legal_check(payload.name, analysis, license_data)
+    # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית
+    analysis = _apply_legal_check(payload.name, analysis, license_data, db)
 
     return _create_scan_result_record(
         db=db,
@@ -331,7 +331,9 @@ async def pre_push_scan(
             license_data=pkg_license_data,
             osv_results=pkg_osv_summary,
         )
-        pkg_analysis = _apply_legal_check(package_name, pkg_analysis, pkg_license_data)
+        
+        # 🌟 עדכון: העברנו את ה-db פנימה לתוך הבדיקה המשפטית בלולאת ה-pre-push
+        pkg_analysis = _apply_legal_check(package_name, pkg_analysis, pkg_license_data, db)
         status_value = str(pkg_analysis.get("status", "")).strip().upper()
 
         if status_value == "BLOCKED":
@@ -351,7 +353,7 @@ async def pre_push_scan(
         per_package_summaries.append(
             f"{package_name}@{package_version}: {pkg_analysis['status']}"
         )
-        # Embed recommendation within the section so the frontend can parse it per package
+        
         pkg_explanation = pkg_analysis.get("ai_explanation", "")
         pkg_recommendation = pkg_analysis.get("recommendation", "").strip()
         section = f"{package_name}@{package_version}\n{pkg_explanation}"
@@ -379,10 +381,8 @@ async def pre_push_scan(
         "status": final_status,
         "cve_summary": "\n".join(per_package_summaries),
         "license_type": "Mixed",
-        # Sections contain embedded ===RECOMMENDATION=== separators so the
-        # frontend can parse explanation and recommendation per package.
         "ai_explanation": "\n\n---\n\n".join(ai_notes),
-        "recommendation": "",  # Per-package recommendations embedded in ai_explanation sections
+        "recommendation": "",
     }
     aggregate_scan_request = ScanRequest(
         name="pre-push dependency batch",
@@ -401,5 +401,4 @@ async def pre_push_scan(
         "status": stored_scan.status.value,
         "scan_id": stored_scan.id,
         "summary": short_summary,
-        "failures": failures,
     }

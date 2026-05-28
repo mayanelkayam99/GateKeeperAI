@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
-
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, Text, Column, Integer, JSON
+from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.database import Base
@@ -60,3 +60,12 @@ class ScanResult(Base):
     )
 
     package: Mapped["Package"] = relationship("Package", back_populates="scan_results")
+
+
+class CompanyPolicy(Base):
+    __tablename__ = "company_policies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    context = Column(Text, nullable=False, default="")          # ← היה company_context
+    allowed_licenses = Column(JSON, nullable=False, default=list)
+    blocked_licenses = Column(JSON, nullable=False, default=list)
