@@ -2,6 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+YOU HAVE SUPERPOWERS!  
+You *must* read the instructions at superpowers\skills\using-superpowers\SKILL.md before doing any work on this project.
+
 ## Project Overview
 
 **AI Security Gatekeeper** is a full-stack security analysis platform for open-source dependencies. It combines the OSV vulnerability database with Groq's Llama 3.3 70B LLM and a legal compliance agent to produce policy-driven security decisions (APPROVED / WARNING / BLOCKED). It integrates with GitHub webhooks and git pre-push hooks.

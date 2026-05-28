@@ -5,6 +5,8 @@ import {
   Scale,
   ShieldCheck,
   Sparkles,
+  Wrench,
+  Package,
 } from "lucide-react";
 import { getStatusTheme } from "../utils/statusTheme";
 
@@ -74,6 +76,51 @@ function extractLicenseRows(result) {
     : [{ packageName: packageLabel, status, license: "Unknown" }];
 }
 
+function deriveRecommendedFix(explanation, status) {
+  const exp = String(explanation || "").toLowerCase();
+
+  if (exp.includes("non-compete") || exp.includes("anti-security")) {
+    return "Replace this package with one that uses a permissive open-source license (MIT, Apache-2.0, or ISC). Search npmjs.com for an alternative with a compatible license.";
+  }
+  if (exp.includes("legal agent") && (exp.includes("gpl") || exp.includes("agpl") || exp.includes("copyleft"))) {
+    return "Switch to an MIT or Apache-2.0 licensed equivalent. Many popular packages have permissively licensed alternatives — check the npm registry or bundlephobia.com.";
+  }
+  if (exp.includes("legal agent")) {
+    return "This package was flagged by the Legal Agent. Replace it with a dependency using an approved SPDX license (MIT, Apache-2.0, BSD-2-Clause, ISC).";
+  }
+  if (exp.includes("rce") || exp.includes("remote code execution") || exp.includes("code injection")) {
+    return "Critical RCE detected. Upgrade to the latest patched release immediately, or replace with a maintained alternative. Check the package's GitHub security advisories for the minimum safe version.";
+  }
+  if (exp.includes("prototype pollution")) {
+    return "Upgrade to the latest version where prototype pollution is patched. Run `npm audit fix` to automatically apply the recommended fix if available.";
+  }
+  if (exp.includes("sql injection") || exp.includes("data exposure") || exp.includes("data integrity")) {
+    return "Upgrade to the latest version that patches this data-integrity vulnerability, or switch to a well-maintained alternative library.";
+  }
+  if (exp.includes("cvss") || exp.includes("severity")) {
+    return "Upgrade to the latest version to receive the security patch. Run `npm audit` to identify the exact patched version required.";
+  }
+  if (status === "WARNING") {
+    return "Manually review this dependency before pushing. Run `npm audit` for details, and consider pinning to a known-good version.";
+  }
+  return "Remove or upgrade this dependency. Run `npm audit fix` to apply automatic patches, or search npmjs.com for a secure alternative.";
+}
+
+function parseRecommendation(text) {
+  if (!text) return { prose: "", alternatives: [] };
+  const match = text.match(/^(.*?replace with[^:]+):\s*(.+)$/is);
+  if (match) {
+    return {
+      prose: match[1].trim(),
+      alternatives: match[2]
+        .split(/[,;]/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
+  return { prose: text, alternatives: [] };
+}
+
 export default function ScanResultCard({ result }) {
   if (!result) return null;
 
@@ -82,6 +129,13 @@ export default function ScanResultCard({ result }) {
   const pkg = result.package;
   const quickVerdict = buildQuickVerdict(result);
   const licenseRows = extractLicenseRows(result);
+
+  const rawFix =
+    result.recommendation && result.recommendation.trim()
+      ? result.recommendation.trim()
+      : deriveRecommendedFix(result.ai_explanation || "", result.status);
+  const { prose: fixProse, alternatives: fixAlts } = parseRecommendation(rawFix);
+  const needsFix = result.status === "BLOCKED" || result.status === "WARNING";
 
   return (
     <section
@@ -162,6 +216,40 @@ export default function ScanResultCard({ result }) {
             </div>
           </div>
         </div>
+
+        {needsFix && (
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 p-5 ring-1 ring-emerald-500/10">
+            <p className="mb-3 flex items-center gap-2 text-base font-bold text-emerald-300">
+              <Wrench className="h-4 w-4" />
+              Recommended Fix
+            </p>
+
+            {fixProse && (
+              <p className="text-sm leading-relaxed text-slate-200 whitespace-pre-wrap">
+                {fixProse}
+              </p>
+            )}
+
+            {fixAlts.length > 0 && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-400">
+                  Suggested alternatives
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {fixAlts.map((alt) => (
+                    <span
+                      key={alt}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-3 py-1 font-mono text-xs font-semibold text-emerald-200 ring-1 ring-emerald-500/30"
+                    >
+                      <Package className="h-3.5 w-3.5" />
+                      {alt}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div>
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-300">

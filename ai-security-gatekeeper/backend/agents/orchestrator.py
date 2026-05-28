@@ -130,14 +130,22 @@ def _validate_analysis_payload(payload: dict[str, Any], osv_results: str) -> dic
     if status == "APPROVED":
         status = "APPROVE"
 
+    # --- התיקון: חילוץ ההמלצה ומניעת מלכודת ה-Null ---
+    rec_val = payload.get("recommendation")
+    rec_str = "" if rec_val is None else str(rec_val).strip()
+    if rec_str.lower() in ["none", "null"]:
+        rec_str = ""
+
     return {
         "status": status,
         "cve_summary": str(payload["cve_summary"]).strip() or osv_results,
         "license_type": str(payload["license_type"]).strip() or "Unknown",
         "ai_explanation": str(payload["ai_explanation"]).strip()
         or "Analysis completed without a detailed explanation.",
-        "recommendation": str(payload.get("recommendation", "")).strip(),
+        "recommendation": rec_str,
     }
+
+
 
 
 def _fallback_analysis(osv_results: str, reason: str) -> dict[str, str]:
@@ -172,16 +180,19 @@ def _apply_enterprise_policy(
 
     status = ai_status
     existing_explanation = str(analysis.get("ai_explanation", "")).strip()
-    # Strip any previously-injected policy prefixes to avoid duplication on re-runs.
+    
     cleaned_explanation = re.sub(
         r"(?im)^\s*(enterprise policy decision:.*|force blocked:.*)\s*$",
         "",
         existing_explanation,
     ).strip()
 
-    # Default: use the LLM's own explanation — no redundant status prefix.
     concise_explanation = cleaned_explanation or "No further details available."
+    
+    # --- התיקון: וידוא נוסף שההמלצה לא מכילה None ---
     recommendation = str(analysis.get("recommendation", "")).strip()
+    if recommendation.lower() in ["none", "null"]:
+        recommendation = ""
 
     osv_text = osv_results.lower()
     has_rce_keyword = any(
@@ -209,7 +220,8 @@ def _apply_enterprise_policy(
             if cleaned_explanation
             else policy_block
         )
-        # Only override recommendation if the LLM didn't provide one
+        
+        # עכשיו התנאי הזה יעבוד בוודאות כשההמלצה באמת חסרה
         if not recommendation:
             recommendation = (
                 "Upgrade to the latest patched version immediately. "
