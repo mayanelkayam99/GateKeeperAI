@@ -102,3 +102,21 @@ class HistoryItemResponse(BaseModel):
             self.ai_explanation = parts[0].strip() or None
             self.recommendation = parts[1].strip() or None
         return self
+
+
+from pydantic import BaseModel
+from typing import List
+
+class PolicyBase(BaseModel):
+    context: str
+    allowed_licenses: List[str]
+    blocked_licenses: List[str]
+
+class PolicyCreate(PolicyBase):
+    pass
+
+class PolicyResponse(PolicyBase):
+    id: int
+
+    class Config:
+        from_attributes = True

@@ -6,6 +6,10 @@ import HistoryTable from "./src/components/HistoryTable";
 import ScanForm from "./src/components/ScanForm";
 import ScanResultCard from "./src/components/ScanResultCard";
 
+// 🌟 ייבוא הרכיבים החדשים שלכן
+import PolicyDashboard from "./src/components/PolicyDashboard";
+import ScanHistorySidebar from "./src/components/ScanHistorySidebar";
+
 function getErrorMessage(err) {
   if (err.response?.data?.detail) {
     const detail = err.response.data.detail;
@@ -36,6 +40,9 @@ export default function App() {
   const [focusedError, setFocusedError] = useState(null);
   const [requestedScanId, setRequestedScanId] = useState(null);
 
+  // 🌟 סטייט חדש לניהול הטאבים במערכת (צפייה בסורק לעומת ניהול פוליסי)
+  const [activeTab, setActiveTab] = useState("viewer");
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
@@ -53,8 +60,7 @@ export default function App() {
     loadHistory();
   }, [loadHistory]);
 
-  // Integration smoke-test: call POST /api/scan on mount and log the result.
-  // Remove this block once frontend–backend communication is confirmed working.
+  // Integration smoke-test
   useEffect(() => {
     scanPackage("lodash")
       .then((result) => {
@@ -112,6 +118,9 @@ export default function App() {
         ecosystem,
       });
       setLatestResult(result);
+      // אם בוצעה סריקה חדשה, ננקה פוקוס קודם כדי להציג את התוצאה העדכנית ביותר
+      setFocusedResult(null); 
+      setRequestedScanId(result.id ? String(result.id) : null);
       await loadHistory();
     } catch (err) {
       setScanError(getErrorMessage(err));
@@ -120,68 +129,140 @@ export default function App() {
     }
   };
 
+  // 🌟 פונקציה חדשה: מטפלת בלחיצה על סריקה מתוך ה-Sidebar ההיסטורי ומביאה את הנתונים שלה
+  const handleSelectScanFromSidebar = async (scanId) => {
+    setRequestedScanId(String(scanId));
+    setFocusedLoading(true);
+    setFocusedError(null);
+    setActiveTab("viewer"); // מעביר את המשתמש חזרה לטאב הסריקות במידה והיה בטאב הפוליסי
+
+    try {
+      const data = await fetchScanById(scanId);
+      setFocusedResult(data);
+    } catch (err) {
+      setFocusedError(getErrorMessage(err));
+      setFocusedResult(null);
+    } finally {
+      setFocusedLoading(false);
+    }
+  };
+
   const resultToShow = focusedResult || latestResult;
-  const isDeepLinkedView = requestedScanId != null;
+  const isDeepLinkedView = focusedResult != null;
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
+      {/* כותרת עליונה קבועה */}
       <Header />
 
-      <main className="mx-auto w-full max-w-7xl flex-1 space-y-8 px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <ScanForm
-              packageName={packageName}
-              version={version}
-              ecosystem={ecosystem}
-              loading={scanLoading}
-              error={scanError}
-              onPackageNameChange={setPackageName}
-              onVersionChange={setVersion}
-              onEcosystemChange={setEcosystem}
-              onSubmit={handleScan}
-            />
-          </div>
-
-          <div className="lg:col-span-3">
-            {focusedLoading ? (
-              <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                <p className="text-sm text-slate-500">Loading linked scan result...</p>
-              </div>
-            ) : focusedError ? (
-              <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                <p className="text-sm text-red-300">
-                  Could not load scan {requestedScanId}: {focusedError}
-                </p>
-              </div>
-            ) : resultToShow ? (
-              <div className="space-y-3">
-                {isDeepLinkedView && (
-                  <p className="text-xs uppercase tracking-wider text-accent-cyan">
-                    Linked security scan #{resultToShow.id}
-                  </p>
-                )}
-                <ScanResultCard result={resultToShow} />
-              </div>
-            ) : (
-              <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center">
-                <p className="text-sm text-slate-500">
-                  Submit a package scan to view AI-powered security analysis results here.
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <HistoryTable
-          history={history}
-          loading={historyLoading}
-          error={historyError}
-          onRefresh={loadHistory}
+      {/* 🌟 שינוי מבנה: פריסת Flex רוחבית שמכילה את ה-Sidebar ואת אזור התוכן המרכזי */}
+      <div className="flex flex-1 w-full overflow-hidden">
+        
+        {/* ⬅️ ה-Sidebar ההיסטורי שנוסף משמאל */}
+        <ScanHistorySidebar 
+          currentScanId={requestedScanId ? Number(requestedScanId) : null} 
+          onSelectScan={handleSelectScanFromSidebar} 
         />
-      </main>
 
-      <footer className="border-t border-surface-600/40 py-4 text-center text-xs text-slate-600">
+        {/* ➡️ אזור התוכן המרכזי שמשתנה לפי הטאב הנבחר */}
+        <div className="flex-1 flex flex-col overflow-y-auto">
+          
+          {/* 🔝 תפריט טאבים עליון למעבר מהיר בין הסורק למסך ה-CISO */}
+          <div className="border-b border-slate-800 bg-slate-900/50 px-6 py-3 flex gap-4">
+            <button
+              onClick={() => setActiveTab("viewer")}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === "viewer"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+            >
+              📊 Dependency Auditor
+            </button>
+            <button
+              onClick={() => setActiveTab("policy")}
+              className={`px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
+                activeTab === "policy"
+                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+            >
+              🛡️ CISO AI Governance
+            </button>
+          </div>
+
+          {/* 🎯 רינדור התוכן הדינמי על פי הטאב הנבחר */}
+          <main className="w-full max-w-7xl flex-1 space-y-8 px-4 py-8 sm:px-6 lg:px-8 mx-auto">
+            
+            {activeTab === "policy" ? (
+              // 🛡️ מסך ניהול חוקי ה-AI החדש ל-CISO
+              <PolicyDashboard />
+            ) : (
+              // 📊 מסך הסריקות וההיסטוריה המקורי שלכן
+              <>
+                <div className="grid gap-8 lg:grid-cols-5">
+                  {/* טופס הרצת סריקה */}
+                  <div className="lg:col-span-2">
+                    <ScanForm
+                      packageName={packageName}
+                      version={version}
+                      ecosystem={ecosystem}
+                      loading={scanLoading}
+                      error={scanError}
+                      onPackageNameChange={setPackageName}
+                      onVersionChange={setVersion}
+                      onEcosystemChange={setEcosystem}
+                      onSubmit={handleScan}
+                    />
+                  </div>
+
+                  {/* כרטיס תוצאות סריקה נוכחית/נבחרת */}
+                  <div className="lg:col-span-3">
+                    {focusedLoading ? (
+                      <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center bg-slate-900 border border-slate-800 rounded-xl">
+                        <p className="text-sm text-slate-500 animate-pulse">Loading secure ledger logs...</p>
+                      </div>
+                    ) : focusedError ? (
+                      <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center bg-slate-900/50 border border-red-900/30 rounded-xl">
+                        <p className="text-sm text-red-400">
+                          Could not load scan #{requestedScanId}: {focusedError}
+                        </p>
+                      </div>
+                    ) : resultToShow ? (
+                      <div className="space-y-3">
+                        {isDeepLinkedView && (
+                          <p className="text-xs font-mono uppercase tracking-wider text-indigo-400">
+                            🛡️ Inspecting Audit Log: Archive #{resultToShow.id}
+                          </p>
+                        )}
+                        <ScanResultCard result={resultToShow} />
+                      </div>
+                    ) : (
+                      <div className="panel flex h-full min-h-[280px] flex-col items-center justify-center p-8 text-center bg-slate-900 border border-slate-800 rounded-xl">
+                        <p className="text-sm text-slate-500">
+                          Submit a package scan or select a record from the ledger sidebar to inspect results.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* טבלת ההיסטוריה המקורית בתחתית העמוד */}
+                <HistoryTable
+                  history={history}
+                  loading={historyLoading}
+                  error={historyError}
+                  onRefresh={loadHistory}
+                />
+              </>
+            )}
+
+          </main>
+        </div>
+      </div>
+
+      {/* פוטר קבוע */}
+      <footer className="border-t border-slate-900 bg-slate-950 py-4 text-center text-xs text-slate-600">
         AI Security Gatekeeper · OSV + Groq Llama 3
       </footer>
     </div>
