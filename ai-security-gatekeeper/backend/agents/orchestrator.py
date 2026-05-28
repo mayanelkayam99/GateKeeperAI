@@ -23,6 +23,7 @@ DECISION ENGINE:
 - Any COMPLIANCE violation must result in 'BLOCKED'.
 - Severity > 7.0 (CVSS) is an automatic 'BLOCKED'.
 - Always output a valid JSON with keys: 'status', 'cve_summary', 'license_type', 'ai_explanation'.
+- The 'ai_explanation' field must be concise plain-English prose (2–4 sentences). Do not repeat or restate the status value. Describe what the specific risk is and why it matters to a developer. When status is 'BLOCKED', you MUST end the explanation by naming 1-2 real, installable npm packages or native Node.js/browser APIs the developer can use as a replacement — for example: "Replace with validator.js for input sanitisation" or "Use Node's built-in crypto module instead of this package".
 
 ANTI-HALLUCINATION:
 Do not guess or infer licenses. Use the explicit 'License found in registry' provided in the user prompt. If the license is 'Unknown', state 'Unknown' and base your policy decision purely on vulnerabilities."""
@@ -144,8 +145,8 @@ def _fallback_analysis(osv_results: str, reason: str) -> dict[str, str]:
         "cve_summary": osv_results,
         "license_type": "Unknown",
         "ai_explanation": (
-            "Automated analysis could not be completed reliably. "
-            f"Manual review is recommended. Details: {reason}"
+            f"Automated analysis unavailable — manual review recommended.\n\n"
+            f"Details: {reason}"
         ),
     }
     return _apply_enterprise_policy(
@@ -169,16 +170,15 @@ def _apply_enterprise_policy(
 
     status = ai_status
     existing_explanation = str(analysis.get("ai_explanation", "")).strip()
+    # Strip any previously-injected policy prefixes to avoid duplication on re-runs.
     cleaned_explanation = re.sub(
         r"(?im)^\s*(enterprise policy decision:.*|force blocked:.*)\s*$",
         "",
         existing_explanation,
     ).strip()
-    concise_explanation = (
-        f"Enterprise policy decision: {status}. {cleaned_explanation}"
-        if cleaned_explanation
-        else f"Enterprise policy decision: {status}."
-    )
+
+    # Default: use the LLM's own explanation — no redundant status prefix.
+    concise_explanation = cleaned_explanation or "No further details available."
 
     osv_text = osv_results.lower()
     has_rce_keyword = any(
@@ -195,17 +195,16 @@ def _apply_enterprise_policy(
 
     if has_rce_keyword or has_cvss_critical:
         status = "BLOCKED"
-        reasons: list[str] = []
+        bullets: list[str] = []
         if has_rce_keyword:
-            reasons.append("RCE-related indicators")
+            bullets.append("· Remote code execution (RCE) indicators detected")
         if has_cvss_critical:
-            reasons.append("CVSS >= 7.0 severity")
-        reason_text = " and ".join(reasons) if reasons else "critical vulnerability signals"
-        override_message = f"[Policy Enforcement] Blocked because OSV data explicitly reports {reason_text}."
+            bullets.append("· CVSS score ≥ 7.0 — severity threshold exceeded")
+        policy_block = "Critical vulnerability signals detected by OSV:\n" + "\n".join(bullets)
         concise_explanation = (
-            f"{override_message} {cleaned_explanation}"
+            f"{policy_block}\n\n{cleaned_explanation}"
             if cleaned_explanation
-            else override_message
+            else policy_block
         )
 
     return {

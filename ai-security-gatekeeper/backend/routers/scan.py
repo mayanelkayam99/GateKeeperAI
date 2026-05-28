@@ -105,9 +105,17 @@ def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str,
 
     updated = dict(analysis)
     updated["status"] = "BLOCKED"
-    legal_note = f"[Legal Agent — {legal['risk_level'].upper()} risk] {legal['reason']}"
+    risk = legal["risk_level"].capitalize()  # "High" / "Medium" / "Low"
+
+    legal_note_parts = [f"License compliance issue ({risk} risk):\n{legal['reason']}"]
+
+    alt = legal.get("suggested_alternative", "").strip()
+    if alt:
+        legal_note_parts.append(f"Suggested alternatives: {alt}")
+
+    legal_note = "\n\n".join(legal_note_parts)
     existing = updated.get("ai_explanation", "").strip()
-    updated["ai_explanation"] = f"{legal_note} | {existing}" if existing else legal_note
+    updated["ai_explanation"] = f"{legal_note}\n\n{existing}" if existing else legal_note
     return updated
 
 

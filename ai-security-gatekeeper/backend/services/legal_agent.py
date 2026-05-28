@@ -15,10 +15,14 @@ logger = logging.getLogger(__name__)
 _LEGAL_SYSTEM_PROMPT = (
     "You are an expert legal compliance officer for open-source software. "
     "Analyze the following license text against the company policy provided. "
-    'Return a JSON with: { "status": "APPROVED" | "BLOCKED", '
-    '"reason": "concise explanation", '
-    '"risk_level": "low" | "medium" | "high" }. '
-    "Do not add any conversational text."
+    "Return a JSON object with exactly these fields:\n"
+    '  "status": "APPROVED" or "BLOCKED"\n'
+    '  "reason": concise one-sentence explanation of the compliance decision\n'
+    '  "risk_level": "low", "medium", or "high"\n'
+    '  "suggested_alternative": if status is BLOCKED, name 1-2 real npm packages '
+    "that provide the same functionality under an MIT or Apache-2.0 license "
+    '(e.g., "lodash-es, ramda"); set to null if status is APPROVED\n'
+    "Do not add any conversational text outside the JSON."
 )
 
 # ---------------------------------------------------------------------------
@@ -35,6 +39,7 @@ _FALLBACK_RESULT: dict[str, str] = {
     "status": "WARNING",
     "reason": "Legal analysis unavailable; manual review required.",
     "risk_level": "medium",
+    "suggested_alternative": "",
 }
 
 
@@ -101,10 +106,15 @@ def _parse_legal_response(raw: str) -> dict[str, str]:
     if risk_level not in {"low", "medium", "high"}:
         risk_level = "medium"
 
+    # suggested_alternative may be null / absent — normalise to empty string.
+    raw_alt = data.get("suggested_alternative") or ""
+    suggested_alternative = str(raw_alt).strip() if raw_alt else ""
+
     return {
         "status": status,
         "reason": str(data.get("reason", "No reason provided.")).strip(),
         "risk_level": risk_level,
+        "suggested_alternative": suggested_alternative,
     }
 
 
