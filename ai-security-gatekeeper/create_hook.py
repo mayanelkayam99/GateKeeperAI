@@ -31,6 +31,11 @@ except json.JSONDecodeError:
     print("ERROR||Invalid response from AI Gatekeeper endpoint")
     raise SystemExit(0)
 
+if "detail" in payload or "status" not in payload:
+    detail = payload.get("detail", "No scan status returned from server")
+    print(f"ERROR||{detail}")
+    raise SystemExit(0)
+
 status = str(payload.get("status", "WARNING")).upper()
 scan_id = payload.get("scan_id", "")
 summary = str(payload.get("summary", "No summary provided."))

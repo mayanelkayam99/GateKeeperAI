@@ -9,7 +9,11 @@
     "build": "vite build",
     "preview": "vite preview"
   },
-  "dependencies": {},
+  "dependencies": {
+    "lodash": "4.17.20",
+    "axios": "0.21.0",
+    "minimist": "1.2.5"
+  },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
