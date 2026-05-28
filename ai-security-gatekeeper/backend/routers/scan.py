@@ -105,13 +105,13 @@ def get_scan(scan_id: int, db: Session = Depends(get_db)) -> ScanResult:
     return result
 
 
-def _apply_legal_check(analysis: dict[str, str], license_data: str) -> dict[str, str]:
+def _apply_legal_check(package_name: str, analysis: dict[str, str], license_data: str) -> dict[str, str]:
     """Run the legal agent and escalate the result to BLOCKED when the license is non-compliant.
 
     Returns a (possibly updated) copy of *analysis* — the original dict is never mutated.
     ai_explanation receives only the risk reason; recommendation receives the alternatives.
     """
-    legal = analyze_license(license_data, DEFAULT_PROJECT_POLICY)
+    legal = analyze_license(package_name, license_data, DEFAULT_PROJECT_POLICY)
     if legal["status"] != "BLOCKED":
         return analysis
 
@@ -175,7 +175,7 @@ def scan_package(
             detail=str(exc),
         ) from exc
 
-    analysis = _apply_legal_check(analysis, license_data)
+    analysis = _apply_legal_check(payload.package_name, analysis, license_data)
 
     _create_scan_result_record(
         db=db,
@@ -232,7 +232,7 @@ def create_scan(
             detail=str(exc),
         ) from exc
 
-    analysis = _apply_legal_check(analysis, license_data)
+    analysis = _apply_legal_check(payload.name, analysis, license_data)
 
     return _create_scan_result_record(
         db=db,
@@ -320,7 +320,7 @@ async def pre_push_scan(
             license_data=pkg_license_data,
             osv_results=pkg_osv_summary,
         )
-        pkg_analysis = _apply_legal_check(pkg_analysis, pkg_license_data)
+        pkg_analysis = _apply_legal_check(package_name, pkg_analysis, pkg_license_data)
         status_value = str(pkg_analysis.get("status", "")).strip().upper()
 
         if status_value == "BLOCKED":

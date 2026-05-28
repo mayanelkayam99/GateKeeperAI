@@ -45,7 +45,7 @@ _FALLBACK_RESULT: dict[str, str] = {
 }
 
 
-def analyze_license(license_text: str, project_policy: str) -> dict[str, str]:
+def analyze_license(package_name: str, license_text: str, project_policy: str) -> dict[str, str]:
     """Evaluate *license_text* against *project_policy* using a Groq LLM.
 
     Returns a dict with:
@@ -68,6 +68,7 @@ def analyze_license(license_text: str, project_policy: str) -> dict[str, str]:
     )
 
     user_prompt = (
+        f"Package Name: {package_name}\n"
         f"License text: {license_text}\n\n"
         f"Company policy: {project_policy}"
     )
