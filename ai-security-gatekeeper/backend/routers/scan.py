@@ -386,10 +386,13 @@ async def pre_push_scan(
             .first()
         )
         if last_scan:
+            # איפוס ה-override אחרי שימוש אחד — הפוש הבא ייחסם שוב
+            last_scan.status = "APPROVED"
+            db.commit()
             return {
                 "status": "APPROVED",
                 "scan_id": last_scan.id,
-                "summary": "Previously overridden — push allowed.",
+                "summary": "Previously overridden — push allowed. Override consumed.",
                 "failures": [],
             }
     aggregate_scan_request = ScanRequest(
