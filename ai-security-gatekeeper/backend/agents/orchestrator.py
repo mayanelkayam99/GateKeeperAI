@@ -22,11 +22,12 @@ DECISION ENGINE:
 - Any vulnerability categorized as CRITICAL_EXECUTION or DATA_INTEGRITY must result in 'BLOCKED'.
 - Any COMPLIANCE violation must result in 'BLOCKED'.
 - Severity > 7.0 (CVSS) is an automatic 'BLOCKED'.
-- Always output a valid JSON with keys: 'status', 'cve_summary', 'license_type', 'ai_explanation'.
+- Always output a valid JSON with exactly these keys: 'status', 'cve_summary', 'license_type', 'ai_explanation', 'recommendation'.
+- The 'ai_explanation' field must contain ONLY the risk description: concise plain-English prose (2–3 sentences) explaining what the vulnerability is and why it matters. Do NOT include any fix suggestions or package alternatives in this field.
+- The 'recommendation' field MUST contain actionable remediation advice. If the status is 'BLOCKED' or 'WARNING', you MUST first mentally identify the core technical functionality of the package, and then explicitly name 1-2 real, widely-used npm package alternatives (e.g., "Replace with Ramda" for lodash) OR explicitly recommend upgrading to a patched version (e.g., "Upgrade to lodash@4.17.21 or latest"). Do NOT leave this empty if a risk is found. Set to an empty string ONLY if status is 'APPROVE'.
 
 ANTI-HALLUCINATION:
 Do not guess or infer licenses. Use the explicit 'License found in registry' provided in the user prompt. If the license is 'Unknown', state 'Unknown' and base your policy decision purely on vulnerabilities."""
-
 
 class SecurityOrchestratorError(Exception):
     pass
@@ -135,6 +136,7 @@ def _validate_analysis_payload(payload: dict[str, Any], osv_results: str) -> dic
         "license_type": str(payload["license_type"]).strip() or "Unknown",
         "ai_explanation": str(payload["ai_explanation"]).strip()
         or "Analysis completed without a detailed explanation.",
+        "recommendation": str(payload.get("recommendation", "")).strip(),
     }
 
 
@@ -144,9 +146,10 @@ def _fallback_analysis(osv_results: str, reason: str) -> dict[str, str]:
         "cve_summary": osv_results,
         "license_type": "Unknown",
         "ai_explanation": (
-            "Automated analysis could not be completed reliably. "
-            f"Manual review is recommended. Details: {reason}"
+            f"Automated analysis unavailable — manual review recommended.\n\n"
+            f"Details: {reason}"
         ),
+        "recommendation": "Run npm audit to identify issues and apply available patches.",
     }
     return _apply_enterprise_policy(
         package_name="unknown-package",
@@ -169,16 +172,16 @@ def _apply_enterprise_policy(
 
     status = ai_status
     existing_explanation = str(analysis.get("ai_explanation", "")).strip()
+    # Strip any previously-injected policy prefixes to avoid duplication on re-runs.
     cleaned_explanation = re.sub(
         r"(?im)^\s*(enterprise policy decision:.*|force blocked:.*)\s*$",
         "",
         existing_explanation,
     ).strip()
-    concise_explanation = (
-        f"Enterprise policy decision: {status}. {cleaned_explanation}"
-        if cleaned_explanation
-        else f"Enterprise policy decision: {status}."
-    )
+
+    # Default: use the LLM's own explanation — no redundant status prefix.
+    concise_explanation = cleaned_explanation or "No further details available."
+    recommendation = str(analysis.get("recommendation", "")).strip()
 
     osv_text = osv_results.lower()
     has_rce_keyword = any(
@@ -195,22 +198,29 @@ def _apply_enterprise_policy(
 
     if has_rce_keyword or has_cvss_critical:
         status = "BLOCKED"
-        reasons: list[str] = []
+        bullets: list[str] = []
         if has_rce_keyword:
-            reasons.append("RCE-related indicators")
+            bullets.append("· Remote code execution (RCE) indicators detected")
         if has_cvss_critical:
-            reasons.append("CVSS >= 7.0 severity")
-        reason_text = " and ".join(reasons) if reasons else "critical vulnerability signals"
-        override_message = f"[Policy Enforcement] Blocked because OSV data explicitly reports {reason_text}."
+            bullets.append("· CVSS score ≥ 7.0 — severity threshold exceeded")
+        policy_block = "Critical vulnerability signals detected by OSV:\n" + "\n".join(bullets)
         concise_explanation = (
-            f"{override_message} {cleaned_explanation}"
+            f"{policy_block}\n\n{cleaned_explanation}"
             if cleaned_explanation
-            else override_message
+            else policy_block
         )
+        # Only override recommendation if the LLM didn't provide one
+        if not recommendation:
+            recommendation = (
+                "Upgrade to the latest patched version immediately. "
+                "Run `npm audit fix` to apply automatic patches, or check the package's "
+                "GitHub security advisories for the minimum safe version."
+            )
 
     return {
         "status": status,
         "cve_summary": str(analysis.get("cve_summary", "")).strip() or osv_results,
         "license_type": str(analysis.get("license_type", "")).strip() or "Unknown",
         "ai_explanation": concise_explanation,
+        "recommendation": recommendation,
     }

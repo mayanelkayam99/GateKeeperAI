@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchHistory, fetchScanById, submitScan } from "./src/api/client";
+import { scanPackage } from "./src/api/scan";
 import Header from "./src/components/Header";
 import HistoryTable from "./src/components/HistoryTable";
 import ScanForm from "./src/components/ScanForm";
@@ -51,6 +52,18 @@ export default function App() {
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
+
+  // Integration smoke-test: call POST /api/scan on mount and log the result.
+  // Remove this block once frontend–backend communication is confirmed working.
+  useEffect(() => {
+    scanPackage("lodash")
+      .then((result) => {
+        console.log("[GateKeeper] /api/scan smoke-test result:", result);
+      })
+      .catch((err) => {
+        console.error("[GateKeeper] /api/scan smoke-test failed:", err);
+      });
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
