@@ -8,7 +8,7 @@ set -euo pipefail
 
 API_URL="${AI_GATEKEEPER_API_URL:-http://127.0.0.1:8000/api/scan/pre-push/}"
 UI_URL_BASE="${AI_GATEKEEPER_UI_URL:-http://localhost:5173}"
-PACKAGE_JSON_PATH="frontend\package.json"
+PACKAGE_JSON_PATH="ai-security-gatekeeper/frontend/package.json"
 PYTHON_BIN="python"
 
 if [[ ! -f "$PACKAGE_JSON_PATH" ]]; then
@@ -16,9 +16,19 @@ if [[ ! -f "$PACKAGE_JSON_PATH" ]]; then
   exit 0
 fi
 
+DEVELOPER_NAME=$(git config user.name 2>/dev/null || echo "unknown")
+
+PACKAGE_JSON_CONTENT=$(cat "$PACKAGE_JSON_PATH")
+PAYLOAD=$("$PYTHON_BIN" -c "
+import json, sys
+pkg = json.loads(sys.argv[1])
+pkg['developer_name'] = sys.argv[2]
+print(json.dumps(pkg))
+" "$PACKAGE_JSON_CONTENT" "$DEVELOPER_NAME")
+
 RESPONSE=$(curl -sS -X POST "$API_URL" \
   -H "Content-Type: application/json" \
-  --data-binary "@$PACKAGE_JSON_PATH")
+  -d "$PAYLOAD")
 
 PARSED=$("$PYTHON_BIN" - <<'PY' "$RESPONSE"
 import json
