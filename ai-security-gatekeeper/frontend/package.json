@@ -13,6 +13,7 @@
     "axios": "^1.16.1",
     "lodash": "4.17.20",
     "react-router-dom": "^7.16.0"
+    "colors": "1.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
