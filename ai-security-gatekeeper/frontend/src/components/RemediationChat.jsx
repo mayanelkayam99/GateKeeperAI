@@ -1,6 +1,7 @@
 // frontend/src/components/RemediationChat.jsx
 import { useState, useRef, useEffect } from "react";
 import { Bot, Send, Zap } from "lucide-react";
+import { API_BASE_URL } from "../api/client";
 
 const STARTER_PROMPTS = [
     "What exactly is the vulnerability here?",
@@ -29,9 +30,12 @@ export default function RemediationChat({ scanId, packageName, status }) {
         setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
         try {
-            const res = await fetch("/api/chat/", {
+            const res = await fetch(`${API_BASE_URL}/api/chat/`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { 
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "69420",
+                },
                 body: JSON.stringify({ scan_id: scanId, message: userMsg, history: priorHistory }),
             });
             const reader = res.body.getReader();

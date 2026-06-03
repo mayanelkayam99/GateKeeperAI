@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { fetchScanById } from "../api/client";
+import { fetchScanById, fetchHistory as fetchHistoryApi } from "../api/client";
 
 const C = {
     bg: "#f5f4ef", surface: "#ffffff", surface2: "#f0efe9", border: "#e8e6df", border2: "#d4d1c7",
@@ -28,8 +28,7 @@ export default function CisoDashboard() {
 
     const fetchHistory = useCallback(async () => {
         try {
-            const res = await fetch("/api/history/");
-            const data = await res.json();
+            const data = await fetchHistoryApi();
             const arr = Array.isArray(data) ? data : [];
             setHistory(arr.filter(h => h.source === "pre-push"));
             setLastUpdated(new Date().toLocaleTimeString());

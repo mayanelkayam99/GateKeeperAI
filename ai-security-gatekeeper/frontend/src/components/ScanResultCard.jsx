@@ -5,6 +5,7 @@ import {
   Zap, ChevronDown, ChevronUp, Shield, Activity,
 } from "lucide-react";
 import { getStatusTheme } from "../utils/statusTheme";
+import { API_BASE_URL } from "../api/client";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -251,9 +252,12 @@ function RemediationChat({ scanId, packageName, status, colors }) {
     setMessages(prev => [...prev, { role: "assistant", content: "" }]);
 
     try {
-      const res = await fetch("/api/chat/", {
+      const res = await fetch(`${API_BASE_URL}/api/chat/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "69420",
+        },
         body: JSON.stringify({ scan_id: scanId, message: userMsg, history: priorHistory }),
       });
       const reader = res.body.getReader();

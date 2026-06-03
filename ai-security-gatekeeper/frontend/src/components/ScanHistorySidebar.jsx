@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from "../api/client";
 
 export default function ScanHistorySidebar({ currentScanId, onSelectScan }) {
   const [scans, setScans] = useState([]);
@@ -6,7 +7,11 @@ export default function ScanHistorySidebar({ currentScanId, onSelectScan }) {
 
   useEffect(() => {
     // שליפת היסטוריית הסריקות מה-Backend
-    fetch('/api/history/')
+    fetch(`${API_BASE_URL}/api/history/`, {
+      headers: {
+        "ngrok-skip-browser-warning": "69420",
+      },
+    })
       .then((res) => res.json())
       .then((data) => {
         setScans(Array.isArray(data) ? data : []);
